@@ -1,0 +1,12 @@
+fastmcp
+
+fastapi
+
+uvicorn
+
+psycopg2-binary
+
+python-dotenv
+
+root@Serwer:~/mcp-server# 
+

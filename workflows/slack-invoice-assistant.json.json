@@ -1,0 +1,205 @@
+{
+  "name": "AI Financial Assistant & Slack Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "slack-events-webhook",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        128,
+        16
+      ],
+      "id": "9439faa3-45b9-4752-8d8f-c219ab920044",
+      "name": "Webhook",
+      "webhookId": "slack-events-webhook"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Webhook').item.json.body.event.text }}",
+        "options": {
+          "systemMessage": "You are an AI Financial Assistant. Use the available MCP tools to query the KSeF invoice database and answer the user's questions about invoices, payment statuses, vendors, and totals. \n\nLanguage & Communication Rules:\n- ALWAYS respond in Polish.\n- Be professional, direct, and factual.\n- Keep responses concise and formatted for Slack (use bolding and bullet points).\n- STRICT RULE: Deliver ONLY the requested data. NEVER include polite closing statements, offers for further help, or follow-up questions (e.g., DO NOT write \"W czym jeszcze mogę pomóc?\" or \"Czy chcesz sprawdzić inne faktury?\"). End the message immediately after presenting the data."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        608,
+        16
+      ],
+      "id": "88895894-4032-4ca0-9e45-77cfd377432f",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "gpt-4o"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        608,
+        192
+      ],
+      "id": "00939bf4-03e1-414e-84fc-b607b663c40c",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_CREDENTIALS_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK_URL",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "text",
+              "value": "={{ $json.output }}"
+            },
+            {
+              "name": "channel",
+              "value": "=={{ $('Webhook').item.json.body.event.channel }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        992,
+        16
+      ],
+      "id": "4d996b98-5e2d-4732-8640-3ec92eb63372",
+      "name": "Post Message to Slack"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Use this tool to fetch the list of invoices from the PostgreSQL database. Use it whenever the user asks about invoices, payment statuses, vendors, amounts, or due dates.",
+        "url": "http://mcp-server:8000/invoices",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequestTool",
+      "typeVersion": 4.4,
+      "position": [
+        752,
+        192
+      ],
+      "id": "22fa3183-08e9-4ef9-ad2b-fa5c838447fd",
+      "name": "Query Postgres Invoices Tool",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CREDENTIALS_ID",
+          "name": "MCP Server"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const event = $json.body?.event || {};\n\n// 1. Zdefiniuj ID swojego bota ze Slacka (znajdziesz je w Slacku lub payloadzie webhooka)\nconst MY_BOT_USER_ID = 'YOUR_BOT_USER_ID'; // Zamień na ID swojego bota (np. U07ABC123)\n\n// 2. Jeśli autorem jest bot, wiadomość pochodzi od bota LUB autor to Twój bot -> ODRZUĆ\nif (!event.user || event.bot_id || event.user === MY_BOT_USER_ID) {\n  return []; // Zatrzymuje workflow (brak wyjścia do AI Agenta)\n}\n\n// 3. Blokada powtórzeń ze Slacka (retry) na podstawie event_id\nconst staticData = $getWorkflowStaticData('global');\nif (!staticData.processedEvents) {\n  staticData.processedEvents = [];\n}\n\nconst eventId = $json.body?.event_id;\n\nif (eventId && staticData.processedEvents.includes(eventId)) {\n  return []; // Odrzuca zduplikowane requesty Slacka\n}\n\nif (eventId) {\n  staticData.processedEvents.push(eventId);\n  if (staticData.processedEvents.length > 100) {\n    staticData.processedEvents.shift();\n  }\n}\n\n// 4. Jeśli pisał człowiek – przekaż dane do AI Agenta\nreturn [$input.item];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        16
+      ],
+      "id": "ac979c4e-57ea-4360-8697-5899bc7412d5",
+      "name": "Deduplicate & Filter Bot Events"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Deduplicate & Filter Bot Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Post Message to Slack",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Postgres Invoices Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Message to Slack": {
+      "main": [
+        []
+      ]
+    },
+    "Deduplicate & Filter Bot Events": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": ""
+  },
+  "nodeGroups": [],
+  "id": "",
+  "tags": []
+}

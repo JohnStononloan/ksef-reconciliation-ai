@@ -1,0 +1,1446 @@
+{
+  "name": "PRO FIX: Autonomous Accountant (KSeF & OCR Vision Bridge)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ksef-invoice-webhook",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f055dc13-55ed-4fa6-a51f-407fa5425eca",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "ksef-invoice-webhook",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CREDENTIALS_ID",
+          "name": "python_webhook_headerauth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ status: \"accepted\", execution_id: $execution.id }) }}",
+        "options": {}
+      },
+      "id": "b8a31d91-9fce-4bfc-b957-39fa6789b031",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        640,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\n\n// Rekurencyjne szukanie wartości po kluczu w całym obiekcie\nfunction findValue(obj, targetKey) {\n  if (!obj || typeof obj !== 'object') return undefined;\n  if (Object.prototype.hasOwnProperty.call(obj, targetKey)) return obj[targetKey];\n\n  for (const key of Object.keys(obj)) {\n    if (typeof obj[key] === 'object') {\n      const res = findValue(obj[key], targetKey);\n      if (res !== undefined) return res;\n    }\n  }\n  return undefined;\n}\n\nconst parseNum = (val) => {\n  const num = parseFloat(val);\n  return isNaN(num) ? 0 : num;\n};\n\n// Ekstrakcja danych niezależnie od struktury XML/JSON\nconst podmiot1 = findValue(body, 'Podmiot1') || findValue(body, 'podmiot1') || {};\nconst podmiot2 = findValue(body, 'Podmiot2') || findValue(body, 'podmiot2') || {};\nconst fa = findValue(body, 'Fa') || findValue(body, 'fa') || {};\nconst platnosc = findValue(body, 'Platnosc') || findValue(body, 'platnosc') || {};\n\nconst daneP1 = findValue(podmiot1, 'DaneIdentyfikacyjne') || {};\nconst daneP2 = findValue(podmiot2, 'DaneIdentyfikacyjne') || {};\n\nreturn {\n  // Generowanie dynamicznego ID sesji na potrzeby MCP:\n  session_id: $execution.id ? `sess_${$execution.id}` : `sess_${Date.now()}`,\n\n  ksef_number: findValue(body, 'ksef_number') || \"\",\n  nr_faktury: findValue(fa, 'P_2') || findValue(body, 'P_2') || findValue(body, 'NumerFaktury') || \"BRAK_NUMERU\",\n  data_wystawienia: String(findValue(fa, 'P_1') || findValue(body, 'P_1') || findValue(body, 'DataWytworzeniaFa') || \"\").split('T')[0],\n  \n  nip_sprzedawcy: findValue(daneP1, 'NIP') || \"\",\n  nazwa_sprzedawcy: findValue(daneP1, 'Nazwa') || findValue(daneP1, 'PelnaNazwa') || \"\",\n  \n  nip_nabywcy: findValue(daneP2, 'NIP') || \"\",\n  nazwa_nabywcy: findValue(daneP2, 'Nazwa') || findValue(daneP2, 'PelnaNazwa') || \"\",\n  \n  kwota_netto: parseNum(findValue(fa, 'P_13_1') || findValue(fa, 'P_13_2') || 0),\n  kwota_vat: parseNum(findValue(fa, 'P_14_1') || findValue(fa, 'P_14_2') || 0),\n  kwota_brutto: parseNum(findValue(fa, 'P_15') || findValue(fa, 'P_11') || 0),\n  waluta: findValue(fa, 'KodWaluty') || \"PLN\",\n  \n  termin_platnosci: findValue(platnosc, 'Termin') || findValue(platnosc, 'DataZaplaty') || \"OPŁACONO\",\n  konto_bankowe: findValue(platnosc, 'NrRB') || \"BRAK\",\n  status_platnosci: findValue(platnosc, 'Zaplacono') === \"1\" ? \"OPŁACONA\" : \"NIEOPŁACONA\"\n};"
+      },
+      "id": "45e7dac0-d6a2-4477-ada3-ce07a87182de",
+      "name": "Code in JavaScript",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        944,
+        16
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://mcp-server:8000/add-invoice",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ksef_number: $json.ksef_number, nr_faktury: $json.nr_faktury, data_wystawienia: $json.data_wystawienia, nip_sprzedawcy: $json.nip_sprzedawcy, nazwa_sprzedawcy: $json.nazwa_sprzedawcy, nip_nabywcy: $json.nip_nabywcy, nazwa_nabywcy: $json.nazwa_nabywcy, kwota_netto: Number($json.kwota_netto) || 0, kwota_vat: Number($json.kwota_vat) || 0, kwota_brutto: Number($json.kwota_brutto) || 0, waluta: $json.waluta, termin_platnosci: $json.termin_platnosci, konto_bankowe: $json.konto_bankowe, status_platnosci: $json.status_platnosci }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "8571f0d9-2011-4640-86aa-9c5cb9ae2580",
+      "name": "HTTP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1168,
+        32
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CREDENTIALS_ID",
+          "name": "MCP Server"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Faktury KSeF & Bank",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_IDD/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "faktury ksef",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_IDD/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ksef_number": "={{ $(\"Code in JavaScript\").item.json.ksef_number }}",
+            "nr_faktury": "={{ $(\"Code in JavaScript\").item.json.nr_faktury }}",
+            "data_wystawienia": "={{ $(\"Code in JavaScript\").item.json.data_wystawienia }}",
+            "nip_sprzedawcy": "={{ $(\"Code in JavaScript\").item.json.nip_sprzedawcy }}",
+            "nazwa_sprzedawcy": "={{ $(\"Code in JavaScript\").item.json.nazwa_sprzedawcy }}",
+            "nip_nabywcy": "={{ $(\"Code in JavaScript\").item.json.nip_nabywcy }}",
+            "nazwa_nabywcy": "={{ $(\"Code in JavaScript\").item.json.nazwa_nabywcy }}",
+            "kwota_netto": "={{ $(\"Code in JavaScript\").item.json.kwota_netto }}",
+            "kwota_vat": "={{ $(\"Code in JavaScript\").item.json.kwota_vat }}",
+            "kwota_brutto": "={{ $(\"Code in JavaScript\").item.json.kwota_brutto }}",
+            "waluta": "={{ $(\"Code in JavaScript\").item.json.waluta }}",
+            "termin_platnosci": "={{ $(\"Code in JavaScript\").item.json.termin_platnosci }}",
+            "konto_bankowe": "={{ $(\"Code in JavaScript\").item.json.konto_bankowe }}",
+            "status_platnosci": "={{ $(\"Code in JavaScript\").item.json.status_platnosci }}"
+          },
+          "matchingColumns": [
+            "ksef_number"
+          ],
+          "schema": [
+            {
+              "id": "ksef_number",
+              "displayName": "ksef_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nr_faktury",
+              "displayName": "nr_faktury",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "data_wystawienia",
+              "displayName": "data_wystawienia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nip_sprzedawcy",
+              "displayName": "nip_sprzedawcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nazwa_sprzedawcy",
+              "displayName": "nazwa_sprzedawcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nip_nabywcy",
+              "displayName": "nip_nabywcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "nazwa_nabywcy",
+              "displayName": "nazwa_nabywcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "kwota_netto",
+              "displayName": "kwota_netto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "kwota_vat",
+              "displayName": "kwota_vat",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "kwota_brutto",
+              "displayName": "kwota_brutto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "waluta",
+              "displayName": "waluta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "termin_platnosci",
+              "displayName": "termin_platnosci",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "konto_bankowe",
+              "displayName": "konto_bankowe",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "status_platnosci",
+              "displayName": "status_platnosci",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "cc4c9aff-8873-4230-be68-6b1b53674bcb",
+      "name": "Append row in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1328,
+        32
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_CREDENTIALS_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFolder",
+        "folderToWatch": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_DRIVE_FOLDER_ID",
+          "mode": "list",
+          "cachedResultName": "Przelewy Bankowe",
+          "cachedResultUrl": "[https://drive.google.com/drive/folders/YOUR_GOOGLE_DRIVE_FOLDER_ID]"
+        },
+        "event": "fileCreated",
+        "options": {}
+      },
+      "id": "b2a4e7a3-0698-45da-8e5b-0eaa6b1f4653",
+      "name": "Google Drive Trigger",
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -96,
+        880
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_CREDENTIALS_ID",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://mcp-server:8000/update-status",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ invoice_number: $json.nr_faktury, status: \"paid\", paid_amount: $json.kwota_przelewu, paid_at: $json.data_transakcji, execution_id: $json.execution_id }) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "d7089abc-8f19-4f45-ae62-59904804a088",
+      "name": "HTTP Request1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        2752,
+        1136
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "YOUR_CREDENTIALS_ID",
+          "name": "MCP Server"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Faktury KSeF & Bank",
+          "cachedResultUrl": "[https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit]"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "faktury ksef",
+          "cachedResultUrl": "(https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_ID/edit)"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $(\"Validate Match & Amounts\").item.json.row_number }}",
+            "status_platnosci": "OPŁACONA",
+            "data_płatności": "={{ $(\"Validate Match & Amounts\").item.json.data_transakcji }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "ksef_number",
+              "displayName": "ksef_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nr_faktury",
+              "displayName": "nr_faktury",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "data_wystawienia",
+              "displayName": "data_wystawienia",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nip_sprzedawcy",
+              "displayName": "nip_sprzedawcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nazwa_sprzedawcy",
+              "displayName": "nazwa_sprzedawcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nip_nabywcy",
+              "displayName": "nip_nabywcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nazwa_nabywcy",
+              "displayName": "nazwa_nabywcy",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kwota_netto",
+              "displayName": "kwota_netto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kwota_vat",
+              "displayName": "kwota_vat",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kwota_brutto",
+              "displayName": "kwota_brutto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "waluta",
+              "displayName": "waluta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "termin_platnosci",
+              "displayName": "termin_platnosci",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "konto_bankowe",
+              "displayName": "konto_bankowe",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status_platnosci",
+              "displayName": "status_platnosci",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "data_płatności",
+              "displayName": "data_płatności",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "609c5a64-ebf3-466d-b359-71380a62af3b",
+      "name": "Update row in sheet1",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        3008,
+        1216
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "lQA5EKrKdR0q7kv9",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "c6c03ec4-137e-46c4-944a-8027cb86684f",
+      "name": "Download file",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        416,
+        880
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "4P2J4EM3gpz0Bb5Z",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {
+          "delimiter": ";",
+          "headerRow": true
+        }
+      },
+      "id": "ab9ca6fd-89c7-4e98-b629-3d42f8909f21",
+      "name": "Extract from File",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        624,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Normalizacja pojedynczego przelewu z wyciągu CSV\nconst clean = (v) => String(v === undefined || v === null ? '' : v).replace(/^=/, '').trim();\n\n// 0. Data transakcji - odporne na BOM (\\uFEFF) w pierwszym nagłówku CSV oraz na inną wielkość liter w kluczu\nconst rawKeys = Object.keys($json);\nconst dataKey = rawKeys.find((k) => k.replace(/^\\uFEFF/, '').trim().toLowerCase() === 'data transakcji');\nconst dataTransakcji = clean(dataKey ? $json[dataKey] : ($json[\"Data transakcji\"] || $json.data_transakcji));\n\n// 1. Numer faktury z tytułu przelewu\nconst tytul = clean($json[\"Tytuł\"]);\nconst regexFaktury = /((?:K?FV|FZ)\\s*[\\d\\w\\/\\-]+|\\b\\d+\\/\\d+\\/\\d{4}\\b)/i;\nconst match = tytul.match(regexFaktury);\nconst numerFaktury = match ? match[0].trim() : tytul;\n\n// 2. Kwota - obsługa formatów \"1 234,56\", \"1,234.56\", \"-1234.56\"\nlet s = clean($json[\"Kwota transakcji\"]).replace(/\\s/g, '').replace(/[^\\d,.\\-]/g, '');\nif (s.indexOf(',') > -1 && s.indexOf('.') > -1) {\n  s = s.lastIndexOf(',') > s.lastIndexOf('.')\n    ? s.replace(/\\./g, '').replace(',', '.')\n    : s.replace(/,/g, '');\n} else if (s.indexOf(',') > -1) {\n  s = s.replace(',', '.');\n}\nconst parsed = parseFloat(s);\nconst kwotaLiczba = isNaN(parsed) ? 0 : Math.abs(parsed);\n\n// 3. NIP - akceptuje 1234567890, 123-456-32-18, PL1234567890.\n// Lookaround chroni przed wycięciem 10 cyfr ze środka numeru rachunku.\nconst zrodloNip = clean($json[\"Dane kontrahenta\"]) + ' ' + tytul;\nconst nipMatch = zrodloNip.match(/(?<!\\d)\\d{3}[-\\s]?\\d{3}[-\\s]?\\d{2}[-\\s]?\\d{2}(?!\\d)/);\nconst nip = nipMatch ? nipMatch[0].replace(/\\D/g, '') : '';\n\n// 4. Klucz złączenia (Merge) - identyczna normalizacja po obu stronach\nconst klucz = numerFaktury.toUpperCase().replace(/\\s+/g, '');\n\nreturn {\n  json: {\n    ...$json,\n    data_transakcji: dataTransakcji,\n    wyczyszczony_nr_faktury: numerFaktury,\n    wyczyszczona_kwota: kwotaLiczba,\n    \"wyciągnięty_nip\": nip,\n    klucz_faktury: klucz\n  }\n};"
+      },
+      "id": "2ca06ec8-ad8d-4f10-a6c4-764689273aac",
+      "name": "Code",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        768
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_IDD",
+          "mode": "list",
+          "cachedResultName": "Faktury KSeF & Bank",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_IDD/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "faktury ksef",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_IDD/edit#gid=0"
+        },
+        "options": {}
+      },
+      "id": "4cbb6fd5-453d-4e10-9449-01f9b4ec5290",
+      "name": "Get row(s) in sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        880,
+        944
+      ],
+      "executeOnce": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "alwaysOutputData": true,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "lQA5EKrKdR0q7kv9",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "rule-mime-csv",
+              "leftValue": "={{ $json.mimeType }}",
+              "rightValue": "text/csv",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "75b7a622-13b6-4613-af9c-e9bcaef4630f",
+      "name": "Filter: Only CSV",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.3,
+      "position": [
+        192,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Klucz złączenia po stronie arkusza - ta sama normalizacja co w węźle \"Code\"\nconst clean = (v) => String(v === undefined || v === null ? '' : v).replace(/^=/, '').trim();\nconst klucz = clean($json.nr_faktury).toUpperCase().replace(/\\s+/g, '');\n\nreturn { json: { ...$json, klucz_faktury: klucz } };"
+      },
+      "id": "c6772973-8819-4f8a-a5ce-e2314c457125",
+      "name": "Normalize Invoice Key",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        944
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "fieldsToMatchString": "klucz_faktury",
+        "joinMode": "enrichInput1",
+        "options": {
+          "fuzzyCompare": true,
+          "multipleMatches": "first"
+        }
+      },
+      "id": "f8c57ed8-be7a-4144-b164-d3389fe916a8",
+      "name": "Merge Bank & Invoices",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        1328,
+        880
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Klasyfikacja dopasowania przelew <-> faktura. Tolerancja groszowa: 0.02 PLN.\nconst TOLERANCJA = 0.02;\n\nconst clean = (v) => String(v === undefined || v === null ? '' : v).replace(/^=/, '').trim();\nconst digits = (v) => clean(v).replace(/\\D/g, '');\nconst toNumber = (v) => {\n  let s = clean(v).replace(/\\s/g, '').replace(/[^\\d,.\\-]/g, '');\n  if (s === '') return null;\n  if (s.indexOf(',') > -1 && s.indexOf('.') > -1) {\n    s = s.lastIndexOf(',') > s.lastIndexOf('.')\n      ? s.replace(/\\./g, '').replace(',', '.')\n      : s.replace(/,/g, '');\n  } else if (s.indexOf(',') > -1) {\n    s = s.replace(',', '.');\n  }\n  const n = parseFloat(s);\n  return isNaN(n) ? null : n;\n};\n\n// Faktura uznana za znalezioną tylko gdy Merge dołączył realny wiersz arkusza\nconst maFakture = clean($json.nr_faktury) !== ''\n  && $json.row_number !== undefined\n  && $json.row_number !== null;\n\nconst kwotaFakturyRaw = toNumber($json.kwota_brutto);\nconst kwotaFaktury = kwotaFakturyRaw === null ? null : Math.abs(kwotaFakturyRaw);\nconst kwotaPrzelewuRaw = toNumber($json.wyczyszczona_kwota);\nconst kwotaPrzelewu = kwotaPrzelewuRaw === null ? 0 : Math.abs(kwotaPrzelewuRaw);\n\nconst nipNabywcy = digits($json.nip_nabywcy);\nconst nipSprzedawcy = digits($json.nip_sprzedawcy);\nconst nipPrzelewu = digits($json[\"wyciągnięty_nip\"]);\n\n// Dopuszczamy zgodność z nabywcą LUB sprzedawcą - arkusz miesza faktury\n// sprzedażowe i kosztowe, kontrahent z wyciągu bywa po dowolnej stronie.\nlet nipStatus = 'ok';\nif (maFakture) {\n  if (nipPrzelewu === '') {\n    nipStatus = 'brak_danych';\n  } else if (nipPrzelewu !== nipNabywcy && nipPrzelewu !== nipSprzedawcy) {\n    nipStatus = 'niezgodny';\n  }\n}\n\nconst roznica = (maFakture && kwotaFaktury !== null)\n  ? Math.round((kwotaPrzelewu - kwotaFaktury) * 100) / 100\n  : null;\nconst kwotaZgodna = roznica !== null && Math.abs(roznica) <= TOLERANCJA;\nconst niedoplata = roznica !== null && roznica < -TOLERANCJA;\n\nlet powod = 'Dopasowano';\nif (!maFakture) {\n  powod = 'Brak faktury o numerze ' + clean($json.wyczyszczony_nr_faktury) + ' w arkuszu';\n} else if (nipStatus === 'brak_danych') {\n  powod = 'Nie wykryto NIP w danych przelewu - wymagana weryfikacja reczna';\n} else if (nipStatus === 'niezgodny') {\n  powod = 'NIP przelewu ' + nipPrzelewu + ' nie zgadza sie z NIP nabywcy (' + nipNabywcy + ') ani sprzedawcy (' + nipSprzedawcy + ')';\n} else if (kwotaZgodna) {\n  powod = 'Dopasowano, roznica ' + roznica + ' PLN (w tolerancji ' + TOLERANCJA + ')';\n} else if (niedoplata) {\n  powod = 'Niedoplata: przelew ' + kwotaPrzelewu + ' PLN vs faktura ' + kwotaFaktury + ' PLN, brakuje ' + Math.abs(roznica) + ' PLN';\n} else {\n  powod = 'Niezgodnosc kwot: przelew ' + kwotaPrzelewu + ' PLN vs faktura ' + kwotaFaktury + ' PLN, roznica ' + roznica + ' PLN';\n}\n\nreturn {\n  json: {\n    ...$json,\n    ma_fakture: maFakture,\n    kwota_faktury: kwotaFaktury,\n    kwota_przelewu: kwotaPrzelewu,\n    roznica_kwot: roznica,\n    kwota_zgodna: kwotaZgodna,\n    niedoplata: niedoplata,\n    nip_status: nipStatus,\n    nip_przelewu: nipPrzelewu,\n    nip_nabywcy_norm: nipNabywcy,\n    powod_klasyfikacji: powod,\n    execution_id: $execution.id\n  }\n};"
+      },
+      "id": "ffa06af1-e010-4e89-9832-fee4091bd631",
+      "name": "Validate Match & Amounts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        896
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-no-invoice",
+                    "leftValue": "={{ $json.ma_fakture }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "no_invoice"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-nip",
+                    "leftValue": "={{ $json.nip_status }}",
+                    "rightValue": "ok",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEquals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "nip_mismatch"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "rule-partial",
+                    "leftValue": "={{ $json.kwota_zgodna }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "matched ```"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c2c1bc2f-8407-4873-bf61-eea9923a7628",
+                    "leftValue": "={{ $json.niedoplata }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "partial_payment"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "amount_mismatch",
+          "allMatchingOutputs": false
+        }
+      },
+      "id": "8ac05640-2f3b-470a-8dc4-e16a345336fc",
+      "name": "Route Settlement Status",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        2336,
+        848
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_IDD",
+          "mode": "list",
+          "cachedResultName": "Faktury KSeF & Bank",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_IDD/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Nierozliczone przelewy",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "data_transakcji": "={{ $json.data_transakcji }}",
+            "tytul_przelewu": "={{ $json[\"Tytuł\"] }}",
+            "kwota_przelewu": "={{ $json.kwota_przelewu }}",
+            "nip_przelewu": "={{ $json.nip_przelewu }}",
+            "kandydat_nr_faktury": "={{ $json.wyczyszczony_nr_faktury }}",
+            "powod": "={{ $json.powod_klasyfikacji }}",
+            "execution_id": "={{ $json.execution_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "data_transakcji",
+              "displayName": "data_transakcji",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tytul_przelewu",
+              "displayName": "tytul_przelewu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kwota_przelewu",
+              "displayName": "kwota_przelewu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nip_przelewu",
+              "displayName": "nip_przelewu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kandydat_nr_faktury",
+              "displayName": "kandydat_nr_faktury",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "powod",
+              "displayName": "powod",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "0ed6f3ca-3e4c-4187-82bc-763c7def4ec7",
+      "name": "Log Unmatched Payments",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2688,
+        528
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "lQA5EKrKdR0q7kv9",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_IDD",
+          "mode": "list",
+          "cachedResultName": "Faktury KSeF & Bank",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_IDD/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Anomalie",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "data_transakcji": "={{ $json.data_transakcji }}",
+            "tytul_przelewu": "={{ $json[\"Tytuł\"] }}",
+            "kwota_przelewu": "={{ $json.kwota_przelewu }}",
+            "kwota_faktury": "={{ $json.kwota_faktury }}",
+            "roznica_kwot": "={{ $json.roznica_kwot }}",
+            "nip_przelewu": "={{ $json.nip_przelewu }}",
+            "nip_faktury": "={{ $json.nip_nabywcy_norm }}",
+            "nr_faktury": "={{ $json.nr_faktury }}",
+            "kategoria": "={{ $json.nip_status !== \"ok\" ? \"nip_mismatch\" : ($json.niedoplata ? \"partial_payment\" : \"amount_mismatch\") }}",
+            "powod": "={{ $json.powod_klasyfikacji }}",
+            "execution_id": "={{ $json.execution_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "data_transakcji",
+              "displayName": "data_transakcji",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tytul_przelewu",
+              "displayName": "tytul_przelewu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kwota_przelewu",
+              "displayName": "kwota_przelewu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kwota_faktury",
+              "displayName": "kwota_faktury",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "roznica_kwot",
+              "displayName": "roznica_kwot",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nip_przelewu",
+              "displayName": "nip_przelewu",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nip_faktury",
+              "displayName": "nip_faktury",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "nr_faktury",
+              "displayName": "nr_faktury",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "kategoria",
+              "displayName": "kategoria",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "powod",
+              "displayName": "powod",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "execution_id",
+              "displayName": "execution_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "id": "a58039e0-5641-478b-8947-471c823b8504",
+      "name": "Log Anomalies",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2928,
+        768
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "lQA5EKrKdR0q7kv9",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_SPREADSHEET_IDD",
+          "mode": "list",
+          "cachedResultName": "Faktury KSeF & Bank",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_IDD/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "faktury ksef",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/YOUR_SPREADSHEET_IDD/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $json.row_number }}",
+            "status_platnosci": "={{ $json.nip_status !== \"ok\" ? \"DO_WERYFIKACJI (NIP)\" : ($json.niedoplata ? \"CZĘŚCIOWO_OPŁACONA\" : \"DO_WERYFIKACJI (KWOTA)\") }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "nr_faktury",
+              "displayName": "nr_faktury",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status_platnosci",
+              "displayName": "status_platnosci",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "485b45f1-df4b-4274-bb56-c4f71de61377",
+      "name": "Flag for Verification",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        2992,
+        960
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "lQA5EKrKdR0q7kv9",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Append row in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Filter: Only CSV",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Update row in sheet1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download file": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Merge Bank & Invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "Normalize Invoice Key",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter: Only CSV": {
+      "main": [
+        [
+          {
+            "node": "Download file",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Invoice Key": {
+      "main": [
+        [
+          {
+            "node": "Merge Bank & Invoices",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Bank & Invoices": {
+      "main": [
+        [
+          {
+            "node": "Validate Match & Amounts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Match & Amounts": {
+      "main": [
+        [
+          {
+            "node": "Route Settlement Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Settlement Status": {
+      "main": [
+        [
+          {
+            "node": "Log Unmatched Payments",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Anomalies",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Flag for Verification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Anomalies",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Flag for Verification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Anomalies",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Flag for Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "",
+  "meta": {
+    "instanceId": "local-instance"
+  },
+  "nodeGroups": [
+    {
+      "id": "eff923a2-6781-445a-962d-deb110f697eb",
+      "name": "Zarejestruj wpływ faktury KSeF",
+      "nodeIds": [
+        "b8a31d91-9fce-4bfc-b957-39fa6789b031",
+        "45e7dac0-d6a2-4477-ada3-ce07a87182de",
+        "8571f0d9-2011-4640-86aa-9c5cb9ae2580",
+        "cc4c9aff-8873-4230-be68-6b1b53674bcb"
+      ],
+      "description": "Normalizuje przychodzącą fakturę, rejestruje ją w MCP, a po potwierdzeniu zapisuje (upsert) w arkuszu"
+    },
+    {
+      "id": "c09a0215-795d-4146-8784-259bee1e49fe",
+      "name": "Pozyskaj i dopasuj przelewy",
+      "nodeIds": [
+        "75b7a622-13b6-4613-af9c-e9bcaef4630f",
+        "c6c03ec4-137e-46c4-944a-8027cb86684f",
+        "ab9ca6fd-89c7-4e98-b629-3d42f8909f21",
+        "2ca06ec8-ad8d-4f10-a6c4-764689273aac",
+        "4cbb6fd5-453d-4e10-9449-01f9b4ec5290",
+        "c6772973-8819-4f8a-a5ce-e2314c457125",
+        "f8c57ed8-be7a-4144-b164-d3389fe916a8"
+      ],
+      "description": "Pobiera wyciąg CSV z Drive, normalizuje przelewy i łączy je z fakturami z arkusza po numerze"
+    }
+  ],
+  "id": "",
+  "tags": []
+}
