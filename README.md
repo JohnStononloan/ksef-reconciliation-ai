@@ -90,7 +90,7 @@ Automated ledger auditing capturing edge cases alongside discrepancy logs:
 Clone the repository and configure your environment variables. A template is provided that strictly separates core n8n settings, PostgreSQL credentials, and external API keys.
 
 ```bash
-git clone [https://github.com/your-username/ksef-reconciliation-ai.git](https://github.com/your-username/ksef-reconciliation-ai.git)
+git clone [https://github.com/JohnStononloan/ksef-reconciliation-ai.git](https://github.com/JohnStononloan/ksef-reconciliation-ai.git)
 cd ksef-reconciliation-ai
 cp .env.example .env
 
